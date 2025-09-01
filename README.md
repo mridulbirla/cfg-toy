@@ -30,7 +30,7 @@ A Python application that demonstrates GPT-5's new Context Free Grammar (CFG) ca
 
 ```bash
 # Clone the repository
-git clone <your-repo>
+git clone https://github.com/mridulbirla/cfg-toy
 cd cfg-eval-toy
 
 # Run setup script
