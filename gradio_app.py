@@ -143,13 +143,13 @@ if IS_HF_SPACES:
             
             class MinimalClient:
                 def test_connection_with_config(self, config):
-                    return False, "Minimal mode - connection testing disabled"
+                    return False, "Minimal mode - connection testing disabled. Full backend failed to load."
                 def reconnect(self):
                     pass
             
             class MinimalGenerator:
                 def test_connection_with_config(self, config):
-                    return False, "Minimal mode - connection testing disabled"
+                    return False, "Minimal mode - connection testing disabled. Full backend failed to load."
                 def reconnect(self):
                     pass
             
@@ -588,6 +588,26 @@ with gr.Blocks(title="CFG + Eval Toy", theme=gr.themes.Soft()) as demo:
         components_status.append(f"- QueryGenerator: {'✅' if 'query_generator' in globals() else '❌'}")
         components_status.append(f"- Evaluator: {'✅' if 'evaluator' in globals() else '❌'}")
     
+    # Check for required files
+    required_files = [
+        "config.py",
+        "database/clickhouse_client.py", 
+        "cfg/query_generator.py",
+        "evaluation/evaluator.py",
+        "cfg/grammar.py",
+        "evaluation/test_cases.py"
+    ]
+    
+    file_status = []
+    for file_path in required_files:
+        exists = os.path.exists(file_path)
+        file_status.append(f"- {file_path}: {'✅' if exists else '❌'}")
+    
+    # Check Python path
+    python_path_info = f"- Current directory: {os.getcwd()}"
+    python_path_info += f"\n- Script directory: {os.path.dirname(os.path.abspath(__file__))}"
+    python_path_info += f"\n- Python path entries: {len(sys.path)}"
+    
     debug_info = f"""
 **Current Mode**: {mode_text}
 **Environment Variables**: 
@@ -599,6 +619,12 @@ with gr.Blocks(title="CFG + Eval Toy", theme=gr.themes.Soft()) as demo:
 
 **Component Status**:
 {chr(10).join(components_status) if components_status else '- No components loaded'}
+
+**Required Files**:
+{chr(10).join(file_status)}
+
+**Python Path Info**:
+{python_path_info}
 """
     gr.Markdown(debug_info)
     
