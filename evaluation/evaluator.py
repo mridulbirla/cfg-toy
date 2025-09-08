@@ -44,6 +44,10 @@ class Evaluator:
     def run_evaluation(self, progress_callback=None) -> Dict[str, Any]:
         """Run all test cases and return evaluation results"""
         # Check if QueryGenerator is functional
+        logger.info(f"🔍 Debug: QueryGenerator client is None: {self.query_generator.client is None}")
+        logger.info(f"🔍 Debug: QueryGenerator type: {type(self.query_generator)}")
+        logger.info(f"🔍 Debug: QueryGenerator client type: {type(self.query_generator.client)}")
+        
         if self.query_generator.client is None:
             logger.error("❌ QueryGenerator is not functional - OpenAI API key not configured")
             return {

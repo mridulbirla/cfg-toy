@@ -9,6 +9,9 @@ CONFIG_FILE = "app_config.json"
 class Config:
     # OpenAI Configuration
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    # Clean up API key if it has extra characters
+    if OPENAI_API_KEY and OPENAI_API_KEY.startswith('='):
+        OPENAI_API_KEY = OPENAI_API_KEY[1:]
     
     # ClickHouse Configuration
     # Handle CLICKHOUSE_HOST with proper None/empty string handling
