@@ -427,12 +427,13 @@ def update_config(clickhouse_host, clickhouse_port, clickhouse_username, clickho
 def test_clickhouse_connection_integrated(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database):
     """Test ClickHouse connection using integrated backend"""
     try:
-        # Check if we have the real db_client (not minimal)
-        if hasattr(db_client, 'test_connection_with_config'):
-            # Check if it's the minimal version by looking for the specific error message
-            test_result = db_client.test_connection_with_config({})
-            if "Minimal mode" in str(test_result):
-                return "🔴 Full backend not available - running in minimal mode. Check logs for import errors."
+        # Check if we have the real db_client by testing its class name
+        if hasattr(db_client, '__class__') and 'Minimal' in db_client.__class__.__name__:
+            return "🔴 Full backend not available - running in minimal mode. Check logs for import errors."
+        
+        # Check if we have the real db_client by testing its methods
+        if not hasattr(db_client, 'test_connection_with_config'):
+            return "🔴 Full backend not available - ClickHouse client missing required methods."
         
         test_config = {
             "clickhouse": {
@@ -561,13 +562,18 @@ with gr.Blocks(title="CFG + Eval Toy", theme=gr.themes.Soft()) as demo:
         # Test if components are real or minimal
         if 'db_client' in globals():
             try:
+                # Check class name
+                class_name = db_client.__class__.__name__
+                components_status.append(f"- ClickHouseClient Class: {class_name}")
+                
+                # Test method
                 test_result = db_client.test_connection_with_config({})
                 if "Minimal mode" in str(test_result):
                     components_status.append("- Backend Type: ❌ Minimal (fallback)")
                 else:
                     components_status.append("- Backend Type: ✅ Full (real components)")
-            except:
-                components_status.append("- Backend Type: ❓ Unknown")
+            except Exception as e:
+                components_status.append(f"- Backend Type: ❓ Error: {str(e)}")
     
     # Check for required files
     required_files = [
