@@ -461,8 +461,12 @@ def update_config(clickhouse_host, clickhouse_port, clickhouse_username, clickho
 def test_clickhouse_connection_integrated(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database):
     """Test ClickHouse connection using integrated backend"""
     try:
-        if not INTEGRATED_MODE or 'db_client' not in globals():
-            return "🔴 Integrated backend not available. Please check the logs."
+        # Check if we have the real db_client (not minimal)
+        if hasattr(db_client, 'test_connection_with_config'):
+            # Check if it's the minimal version by looking for the specific error message
+            test_result = db_client.test_connection_with_config({})
+            if "Minimal mode" in str(test_result):
+                return "🔴 Full backend not available - running in minimal mode. Check logs for import errors."
         
         test_config = {
             "clickhouse": {
@@ -587,6 +591,17 @@ with gr.Blocks(title="CFG + Eval Toy", theme=gr.themes.Soft()) as demo:
         components_status.append(f"- ClickHouseClient: {'✅' if 'db_client' in globals() else '❌'}")
         components_status.append(f"- QueryGenerator: {'✅' if 'query_generator' in globals() else '❌'}")
         components_status.append(f"- Evaluator: {'✅' if 'evaluator' in globals() else '❌'}")
+        
+        # Test if components are real or minimal
+        if 'db_client' in globals():
+            try:
+                test_result = db_client.test_connection_with_config({})
+                if "Minimal mode" in str(test_result):
+                    components_status.append("- Backend Type: ❌ Minimal (fallback)")
+                else:
+                    components_status.append("- Backend Type: ✅ Full (real components)")
+            except:
+                components_status.append("- Backend Type: ❓ Unknown")
     
     # Check for required files
     required_files = [
