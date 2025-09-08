@@ -114,7 +114,7 @@ if IS_HF_SPACES:
             raise
         
         try:
-            evaluator = Evaluator()
+            evaluator = Evaluator(query_generator=query_generator, db_client=db_client)
             logger.info("✅ Evaluator initialized")
         except Exception as e:
             logger.error(f"❌ Failed to initialize Evaluator: {e}")

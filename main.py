@@ -25,7 +25,7 @@ Config.load_config_from_file()
 # Initialize components
 db_client = ClickHouseClient(auto_connect=False)
 query_generator = QueryGenerator()
-evaluator = Evaluator()
+evaluator = Evaluator(query_generator=query_generator, db_client=db_client)
 
 # Pydantic models
 class QueryRequest(BaseModel):

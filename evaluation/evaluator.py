@@ -8,14 +8,20 @@ import logging
 logger = logging.getLogger(__name__)
 
 class Evaluator:
-    def __init__(self):
-        self.query_generator = QueryGenerator()
-        self.db_client = ClickHouseClient(auto_connect=False)
+    def __init__(self, query_generator=None, db_client=None):
+        self.query_generator = query_generator or QueryGenerator()
+        self.db_client = db_client or ClickHouseClient(auto_connect=False)
     
     def compare_queries(self, generated: str, expected: str) -> bool:
         """Compare generated query with expected query"""
+        # Handle None values
+        if generated is None:
+            return False
+        
         # Normalize queries for comparison
         def normalize(query):
+            if query is None:
+                return ""
             return query.lower().replace(" ", "").replace("'", "").replace('"', "").strip()
         
         normalized_generated = normalize(generated)
@@ -37,6 +43,21 @@ class Evaluator:
     
     def run_evaluation(self, progress_callback=None) -> Dict[str, Any]:
         """Run all test cases and return evaluation results"""
+        # Check if QueryGenerator is functional
+        if self.query_generator.client is None:
+            logger.error("❌ QueryGenerator is not functional - OpenAI API key not configured")
+            return {
+                "results": [],
+                "metrics": {
+                    "accuracy": 0.0,
+                    "passed_tests": 0,
+                    "total_tests": len(TEST_CASES),
+                    "average_execution_time": 0.0,
+                    "category_breakdown": {}
+                },
+                "error": "QueryGenerator is not functional - OpenAI API key not configured"
+            }
+        
         results = []
         total_execution_time = 0
         total_tests = len(TEST_CASES)
@@ -55,7 +76,12 @@ class Evaluator:
                 total_execution_time += generation_time
                 
                 # Extract the query from the response
-                generated_query = response.get('query', '') if isinstance(response, dict) else str(response)
+                if isinstance(response, dict):
+                    generated_query = response.get('query')
+                    if generated_query is None:
+                        generated_query = ""
+                else:
+                    generated_query = str(response) if response is not None else ""
                 
                 is_correct = self.compare_queries(generated_query, test_case['expected_query'])
                 
