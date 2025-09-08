@@ -3,13 +3,23 @@ import requests
 import json
 import logging
 import os
+import sys
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Check if running in Hugging Face Spaces
+IS_HF_SPACES = os.getenv("SPACE_ID") is not None
+
 # API configuration
-API_BASE_URL = "http://localhost:8000"
+if IS_HF_SPACES:
+    # In Hugging Face Spaces, we'll use integrated backend
+    API_BASE_URL = None
+else:
+    # Local development with separate API server
+    API_BASE_URL = "http://localhost:8000"
 
 # Global configuration storage
 app_config = {
@@ -38,8 +48,66 @@ if os.path.exists(CONFIG_FILE):
     except Exception as e:
         logger.warning(f"Could not load config file: {e}")
 
-def generate_query(natural_language_query):
-    """Generate ClickHouse query from natural language"""
+# Import backend components for integrated mode
+if IS_HF_SPACES:
+    try:
+        # Add the current directory to Python path
+        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+        
+        from config import Config
+        from database.clickhouse_client import ClickHouseClient
+        from cfg.query_generator import QueryGenerator
+        from evaluation.evaluator import Evaluator
+        
+        # Initialize components
+        Config.load_config_from_file()
+        db_client = ClickHouseClient()
+        query_generator = QueryGenerator()
+        evaluator = Evaluator()
+        
+        logger.info("✅ Integrated backend components loaded successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to load integrated backend: {e}")
+        # Fall back to API mode even in HF Spaces
+        API_BASE_URL = "http://localhost:8000"
+        IS_HF_SPACES = False
+
+def generate_query_integrated(natural_language_query):
+    """Generate ClickHouse query using integrated backend"""
+    try:
+        # Generate query using GPT-5 CFG
+        response = query_generator.generate_query(natural_language_query)
+        
+        # Check if we need clarification
+        if response["status"] == "needs_clarification":
+            clarification = response.get("clarification", "I need more information to generate the query.")
+            return (
+                f"🤔 Clarification needed:\n\n{clarification}",
+                "No results - clarification needed",
+                "N/A"
+            )
+        
+        # Execute query if we have one
+        if response["query"]:
+            result = db_client.execute_query(response["query"])
+            return (
+                response["query"],
+                json.dumps(result, indent=2),
+                f"{result['execution_time']:.2f}ms"
+            )
+        else:
+            return (
+                f"❌ Error: {response.get('clarification', 'Unknown error')}",
+                "No results - error occurred",
+                "N/A"
+            )
+        
+    except Exception as e:
+        logger.error(f"Query generation failed: {e}")
+        return f"Error: {str(e)}", "", ""
+
+def generate_query_api(natural_language_query):
+    """Generate ClickHouse query using API server"""
     try:
         response = requests.post(
             f"{API_BASE_URL}/query",
@@ -74,41 +142,20 @@ def generate_query(natural_language_query):
         logger.error(f"Query generation failed: {e}")
         return f"Error: {str(e)}", "", ""
 
-def run_evaluation():
-    """Run evaluation tests with progress tracking"""
+def generate_query(natural_language_query):
+    """Generate ClickHouse query from natural language"""
+    if IS_HF_SPACES and API_BASE_URL is None:
+        return generate_query_integrated(natural_language_query)
+    else:
+        return generate_query_api(natural_language_query)
+
+def run_evaluation_integrated():
+    """Run evaluation using integrated backend"""
     try:
-        response = requests.post(f"{API_BASE_URL}/evaluate-stream", timeout=120, stream=True)
-        response.raise_for_status()
-        
-        # Process streaming response
-        progress_text = "## Evaluation Progress\n\n"
-        final_results = None
-        
-        for line in response.iter_lines():
-            if line:
-                line_str = line.decode('utf-8')
-                if line_str.startswith('data: '):
-                    try:
-                        data = json.loads(line_str[6:])  # Remove 'data: ' prefix
-                        
-                        if data['type'] == 'start':
-                            progress_text += f"🚀 {data['message']}\n\n"
-                        elif data['type'] == 'progress':
-                            progress_text += f"**Test {data['current']}/{data['total']}** ({data['progress_percent']:.1f}%)\n"
-                            progress_text += f"- {data['description']} - {data['status']}\n\n"
-                        elif data['type'] == 'complete':
-                            final_results = data['results']
-                        elif data['type'] == 'error':
-                            return f"❌ Error: {data['message']}"
-                            
-                    except json.JSONDecodeError:
-                        continue
-        
-        if not final_results:
-            return "❌ No results received"
+        evaluation_results = evaluator.run_evaluation()
         
         # Format final results
-        metrics = final_results["metrics"]
+        metrics = evaluation_results["metrics"]
         summary = f"""
 ## Evaluation Results
 
@@ -125,7 +172,7 @@ def run_evaluation():
         
         # Detailed results
         details = "\n### Detailed Results:\n"
-        for test_result in final_results["results"]:
+        for test_result in evaluation_results["results"]:
             status = "✅ PASS" if test_result["is_correct"] else "❌ FAIL"
             details += f"\n**{status}** - {test_result['test_case']['description']}\n"
             details += f"- Expected: `{test_result['expected_query']}`\n"
@@ -139,7 +186,72 @@ def run_evaluation():
         logger.error(f"Evaluation failed: {e}")
         return f"Error: {str(e)}"
 
-def check_health():
+def run_evaluation_api():
+    """Run evaluation using API server"""
+    try:
+        response = requests.post(f"{API_BASE_URL}/evaluate", timeout=120)
+        response.raise_for_status()
+        
+        result = response.json()
+        metrics = result["metrics"]
+        
+        # Format results
+        summary = f"""
+## Evaluation Results
+
+**Overall Accuracy**: {metrics['accuracy']:.1%}
+**Tests Passed**: {metrics['passed_tests']}/{metrics['total_tests']}
+**Average Execution Time**: {metrics['average_execution_time']:.2f}ms
+
+### Category Breakdown:
+"""
+        
+        for category, stats in metrics['category_breakdown'].items():
+            if stats['total'] > 0:
+                summary += f"- **{category.title()}**: {stats['passed']}/{stats['total']} ({stats['accuracy']:.1%})\n"
+        
+        # Detailed results
+        details = "### Detailed Results:\n"
+        for test_result in result["results"]:
+            status = "✅ PASS" if test_result["is_correct"] else "❌ FAIL"
+            details += f"\n**{status}** - {test_result['test_case']['description']}\n"
+            details += f"- Expected: `{test_result['expected_query']}`\n"
+            details += f"- Generated: `{test_result['generated_query']}`\n"
+            if test_result.get('error'):
+                details += f"- Error: {test_result['error']}\n"
+        
+        return summary + details
+        
+    except Exception as e:
+        logger.error(f"Evaluation failed: {e}")
+        return f"Error: {str(e)}"
+
+def run_evaluation():
+    """Run evaluation tests with progress tracking"""
+    if IS_HF_SPACES and API_BASE_URL is None:
+        return run_evaluation_integrated()
+    else:
+        return run_evaluation_api()
+
+def check_health_integrated():
+    """Check system health using integrated backend"""
+    try:
+        is_connected = db_client.test_connection()
+        status = "🟢 Healthy" if is_connected else "🔴 Unhealthy"
+        db_status = "🟢 Connected" if is_connected else "🔴 Disconnected"
+        
+        return f"""
+## System Status
+
+**API Status**: {status}
+**Database**: {db_status}
+**Mode**: Integrated Backend
+**Timestamp**: {time.time()}
+"""
+    except Exception as e:
+        return f"🔴 Error: {str(e)}"
+
+def check_health_api():
     """Check API health"""
     try:
         response = requests.get(f"{API_BASE_URL}/health", timeout=5)
@@ -159,8 +271,46 @@ def check_health():
     except Exception as e:
         return f"🔴 Error: {str(e)}"
 
-def update_config(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database, openai_api_key):
-    """Update application configuration"""
+def check_health():
+    """Check system health"""
+    if IS_HF_SPACES and API_BASE_URL is None:
+        return check_health_integrated()
+    else:
+        return check_health_api()
+
+def update_config_integrated(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database, openai_api_key):
+    """Update application configuration using integrated backend"""
+    global app_config
+    
+    # Update configuration
+    app_config["clickhouse"] = {
+        "host": clickhouse_host,
+        "port": clickhouse_port,
+        "username": clickhouse_username,
+        "password": clickhouse_password,
+        "database": clickhouse_database
+    }
+    app_config["openai"] = {
+        "api_key": openai_api_key
+    }
+    
+    try:
+        # Update configuration in integrated backend
+        Config.update_config(app_config)
+        
+        # Reconnect clients with new configuration
+        if "clickhouse" in app_config:
+            db_client.reconnect()
+        if "openai" in app_config:
+            query_generator.reconnect()
+        
+        return "✅ Configuration updated successfully!"
+    except Exception as e:
+        logger.error(f"Configuration update failed: {e}")
+        return f"❌ Error updating configuration: {str(e)}"
+
+def update_config_api(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database, openai_api_key):
+    """Update application configuration using API"""
     global app_config
     
     # Update configuration
@@ -189,8 +339,37 @@ def update_config(clickhouse_host, clickhouse_port, clickhouse_username, clickho
         logger.error(f"Configuration update failed: {e}")
         return f"❌ Error updating configuration: {str(e)}"
 
-def test_clickhouse_connection(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database):
-    """Test ClickHouse connection"""
+def update_config(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database, openai_api_key):
+    """Update application configuration"""
+    if IS_HF_SPACES and API_BASE_URL is None:
+        return update_config_integrated(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database, openai_api_key)
+    else:
+        return update_config_api(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database, openai_api_key)
+
+def test_clickhouse_connection_integrated(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database):
+    """Test ClickHouse connection using integrated backend"""
+    try:
+        test_config = {
+            "clickhouse": {
+                "host": clickhouse_host,
+                "port": clickhouse_port,
+                "username": clickhouse_username,
+                "password": clickhouse_password,
+                "database": clickhouse_database
+            }
+        }
+        
+        connected, error = db_client.test_connection_with_config(test_config)
+        if connected:
+            return "🟢 ClickHouse connection successful!"
+        else:
+            return f"🔴 ClickHouse connection failed: {error or 'Unknown error'}"
+    except Exception as e:
+        logger.error(f"ClickHouse test failed: {e}")
+        return f"🔴 Error testing ClickHouse: {str(e)}"
+
+def test_clickhouse_connection_api(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database):
+    """Test ClickHouse connection using API"""
     try:
         test_config = {
             "clickhouse": {
@@ -218,8 +397,33 @@ def test_clickhouse_connection(clickhouse_host, clickhouse_port, clickhouse_user
         logger.error(f"ClickHouse test failed: {e}")
         return f"🔴 Error testing ClickHouse: {str(e)}"
 
-def test_openai_connection(openai_api_key):
-    """Test OpenAI connection"""
+def test_clickhouse_connection(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database):
+    """Test ClickHouse connection"""
+    if IS_HF_SPACES and API_BASE_URL is None:
+        return test_clickhouse_connection_integrated(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database)
+    else:
+        return test_clickhouse_connection_api(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database)
+
+def test_openai_connection_integrated(openai_api_key):
+    """Test OpenAI connection using integrated backend"""
+    try:
+        test_config = {
+            "openai": {
+                "api_key": openai_api_key
+            }
+        }
+        
+        connected, error = query_generator.test_connection_with_config(test_config)
+        if connected:
+            return "🟢 OpenAI connection successful!"
+        else:
+            return f"🔴 OpenAI connection failed: {error or 'Unknown error'}"
+    except Exception as e:
+        logger.error(f"OpenAI test failed: {e}")
+        return f"🔴 Error testing OpenAI: {str(e)}"
+
+def test_openai_connection_api(openai_api_key):
+    """Test OpenAI connection using API"""
     try:
         test_config = {
             "openai": {
@@ -242,6 +446,13 @@ def test_openai_connection(openai_api_key):
     except Exception as e:
         logger.error(f"OpenAI test failed: {e}")
         return f"🔴 Error testing OpenAI: {str(e)}"
+
+def test_openai_connection(openai_api_key):
+    """Test OpenAI connection"""
+    if IS_HF_SPACES and API_BASE_URL is None:
+        return test_openai_connection_integrated(openai_api_key)
+    else:
+        return test_openai_connection_api(openai_api_key)
 
 # Create Gradio interface
 with gr.Blocks(title="CFG + Eval Toy", theme=gr.themes.Soft()) as demo:
@@ -297,10 +508,14 @@ with gr.Blocks(title="CFG + Eval Toy", theme=gr.themes.Soft()) as demo:
                 progress_text = "## Evaluation Progress\n\n🚀 Starting evaluation...\n\n"
                 yield progress_text, "🔄 Initializing..."
                 
-                # Use regular evaluation for now (streaming can be added later)
-                response = requests.post(f"{API_BASE_URL}/evaluate", timeout=120)
-                response.raise_for_status()
-                final_results = response.json()
+                if IS_HF_SPACES and API_BASE_URL is None:
+                    # Use integrated backend
+                    final_results = evaluator.run_evaluation()
+                else:
+                    # Use API server
+                    response = requests.post(f"{API_BASE_URL}/evaluate", timeout=120)
+                    response.raise_for_status()
+                    final_results = response.json()
                 
                 # Simulate progress updates
                 total_tests = len(final_results["results"])
