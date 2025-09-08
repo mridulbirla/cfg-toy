@@ -7,12 +7,12 @@ logger = logging.getLogger(__name__)
 
 class QueryGenerator:
     def __init__(self):
-        self.client = openai.OpenAI(api_key=Config.get_openai_api_key())
+        self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
     
     def reconnect(self):
         """Reconnect with updated configuration"""
         try:
-            self.client = openai.OpenAI(api_key=Config.get_openai_api_key())
+            self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
             logger.info("✅ Reconnected to OpenAI with new configuration")
             return True
         except Exception as e:

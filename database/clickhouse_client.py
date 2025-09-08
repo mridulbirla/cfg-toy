@@ -13,12 +13,21 @@ class ClickHouseClient:
     def connect(self):
         """Establish connection to ClickHouse"""
         try:
+            # Validate configuration before attempting connection
+            config_errors = Config.validate_config()
+            if config_errors:
+                error_msg = f"Configuration errors: {', '.join(config_errors)}"
+                logger.error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+            
+            logger.info(f"🔗 Attempting to connect to ClickHouse at {Config.CLICKHOUSE_HOST}:{Config.CLICKHOUSE_PORT}")
+            
             self.client = clickhouse_connect.get_client(
-                host=Config.get_clickhouse_host(),
-                port=Config.get_clickhouse_port(),
-                username=Config.get_clickhouse_username(),
-                password=Config.get_clickhouse_password(),
-                database=Config.get_clickhouse_database()
+                host=Config.CLICKHOUSE_HOST,
+                port=Config.CLICKHOUSE_PORT,
+                username=Config.CLICKHOUSE_USERNAME,
+                password=Config.CLICKHOUSE_PASSWORD,
+                database=Config.CLICKHOUSE_DATABASE
             )
             logger.info("✅ Connected to ClickHouse")
         except Exception as e:
@@ -29,11 +38,11 @@ class ClickHouseClient:
         """Reconnect with updated configuration"""
         try:
             self.client = clickhouse_connect.get_client(
-                host=Config.get_clickhouse_host(),
-                port=Config.get_clickhouse_port(),
-                username=Config.get_clickhouse_username(),
-                password=Config.get_clickhouse_password(),
-                database=Config.get_clickhouse_database()
+                host=Config.CLICKHOUSE_HOST,
+                port=Config.CLICKHOUSE_PORT,
+                username=Config.CLICKHOUSE_USERNAME,
+                password=Config.CLICKHOUSE_PASSWORD,
+                database=Config.CLICKHOUSE_DATABASE
             )
             logger.info("✅ Reconnected to ClickHouse with new configuration")
             return True
@@ -44,19 +53,45 @@ class ClickHouseClient:
     def test_connection_with_config(self, config_dict):
         """Test connection with specific configuration"""
         try:
+            # Validate the test configuration
+            clickhouse_config = config_dict.get("clickhouse", {})
+            host = clickhouse_config.get("host")
+            port = clickhouse_config.get("port")
+            username = clickhouse_config.get("username")
+            password = clickhouse_config.get("password")
+            database = clickhouse_config.get("database")
+            
+            # Check for None or empty values
+            if not host or host.lower() in ['none', 'null', '']:
+                return False, "Invalid host: host cannot be None, null, or empty"
+            
+            if not port:
+                return False, "Invalid port: port cannot be None or empty"
+            
+            try:
+                port_int = int(port)
+                if port_int <= 0:
+                    return False, f"Invalid port: {port_int} must be a positive integer"
+            except (ValueError, TypeError):
+                return False, f"Invalid port: '{port}' is not a valid integer"
+            
+            logger.info(f"🔗 Testing ClickHouse connection to {host}:{port}")
+            
             test_client = clickhouse_connect.get_client(
-                host=config_dict["clickhouse"]["host"],
-                port=int(config_dict["clickhouse"]["port"]),
-                username=config_dict["clickhouse"]["username"],
-                password=config_dict["clickhouse"]["password"],
-                database=config_dict["clickhouse"]["database"]
+                host=host,
+                port=port_int,
+                username=username,
+                password=password,
+                database=database
             )
             result = test_client.query("SELECT 1 as test")
             test_client.close()
+            logger.info("✅ ClickHouse connection test successful")
             return True, None
         except Exception as e:
-            logger.error(f"Connection test failed: {e}")
-            return False, str(e)
+            error_msg = str(e)
+            logger.error(f"❌ ClickHouse connection test failed: {error_msg}")
+            return False, error_msg
     
     def execute_query(self, query: str):
         """Execute a ClickHouse query and return results"""
