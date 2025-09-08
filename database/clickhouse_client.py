@@ -6,9 +6,10 @@ import time
 logger = logging.getLogger(__name__)
 
 class ClickHouseClient:
-    def __init__(self):
+    def __init__(self, auto_connect=True):
         self.client = None
-        self.connect()
+        if auto_connect:
+            self.connect()
     
     def connect(self):
         """Establish connection to ClickHouse"""
@@ -37,6 +38,14 @@ class ClickHouseClient:
     def reconnect(self):
         """Reconnect with updated configuration"""
         try:
+            # Close existing connection if any
+            if self.client is not None:
+                try:
+                    self.client.close()
+                except:
+                    pass
+            
+            # Create new connection
             self.client = clickhouse_connect.get_client(
                 host=Config.CLICKHOUSE_HOST,
                 port=Config.CLICKHOUSE_PORT,
@@ -96,6 +105,10 @@ class ClickHouseClient:
     def execute_query(self, query: str):
         """Execute a ClickHouse query and return results"""
         try:
+            # Connect if not already connected
+            if self.client is None:
+                self.connect()
+            
             start_time = time.time()
             result = self.client.query(query)
             execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
@@ -112,6 +125,10 @@ class ClickHouseClient:
     def test_connection(self):
         """Test the database connection"""
         try:
+            # Connect if not already connected
+            if self.client is None:
+                self.connect()
+            
             result = self.client.query("SELECT 1 as test")
             return True
         except Exception as e:

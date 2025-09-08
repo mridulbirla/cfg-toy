@@ -100,8 +100,8 @@ if IS_HF_SPACES:
             logger.warning(f"⚠️ Could not load config from file: {e}")
         
         try:
-            db_client = ClickHouseClient()
-            logger.info("✅ ClickHouseClient initialized")
+            db_client = ClickHouseClient(auto_connect=False)
+            logger.info("✅ ClickHouseClient initialized (without auto-connect)")
         except Exception as e:
             logger.error(f"❌ Failed to initialize ClickHouseClient: {e}")
             raise
@@ -457,6 +457,9 @@ def test_clickhouse_connection_integrated(clickhouse_host, clickhouse_port, clic
 def test_clickhouse_connection_api(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database):
     """Test ClickHouse connection using API"""
     try:
+        if API_BASE_URL is None:
+            return "🔴 API mode not available - API_BASE_URL is None. Please check if integrated backend is working."
+        
         test_config = {
             "clickhouse": {
                 "host": clickhouse_host,
@@ -514,6 +517,9 @@ def test_openai_connection_integrated(openai_api_key):
 def test_openai_connection_api(openai_api_key):
     """Test OpenAI connection using API"""
     try:
+        if API_BASE_URL is None:
+            return "🔴 API mode not available - API_BASE_URL is None. Please check if integrated backend is working."
+        
         test_config = {
             "openai": {
                 "api_key": openai_api_key

@@ -23,7 +23,7 @@ app = FastAPI(title="CFG + Eval Toy API", version="1.0.0")
 Config.load_config_from_file()
 
 # Initialize components
-db_client = ClickHouseClient()
+db_client = ClickHouseClient(auto_connect=False)
 query_generator = QueryGenerator()
 evaluator = Evaluator()
 
