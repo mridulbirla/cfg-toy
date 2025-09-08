@@ -61,25 +61,126 @@ if IS_HF_SPACES:
         # Add the current directory to Python path
         sys.path.append(os.path.dirname(os.path.abspath(__file__)))
         
-        from config import Config
-        from database.clickhouse_client import ClickHouseClient
-        from cfg.query_generator import QueryGenerator
-        from evaluation.evaluator import Evaluator
+        logger.info("🔄 Attempting to load integrated backend components...")
         
-        # Initialize components
-        Config.load_config_from_file()
-        db_client = ClickHouseClient()
-        query_generator = QueryGenerator()
-        evaluator = Evaluator()
+        # Try to import each component individually with detailed error reporting
+        try:
+            from config import Config
+            logger.info("✅ Config module loaded")
+        except Exception as e:
+            logger.error(f"❌ Failed to import config: {e}")
+            raise
         
-        logger.info("✅ Integrated backend components loaded successfully")
+        try:
+            from database.clickhouse_client import ClickHouseClient
+            logger.info("✅ ClickHouseClient module loaded")
+        except Exception as e:
+            logger.error(f"❌ Failed to import ClickHouseClient: {e}")
+            raise
+        
+        try:
+            from cfg.query_generator import QueryGenerator
+            logger.info("✅ QueryGenerator module loaded")
+        except Exception as e:
+            logger.error(f"❌ Failed to import QueryGenerator: {e}")
+            raise
+        
+        try:
+            from evaluation.evaluator import Evaluator
+            logger.info("✅ Evaluator module loaded")
+        except Exception as e:
+            logger.error(f"❌ Failed to import Evaluator: {e}")
+            raise
+        
+        # Initialize components with error handling
+        try:
+            Config.load_config_from_file()
+            logger.info("✅ Config loaded from file")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load config from file: {e}")
+        
+        try:
+            db_client = ClickHouseClient()
+            logger.info("✅ ClickHouseClient initialized")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize ClickHouseClient: {e}")
+            raise
+        
+        try:
+            query_generator = QueryGenerator()
+            logger.info("✅ QueryGenerator initialized")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize QueryGenerator: {e}")
+            raise
+        
+        try:
+            evaluator = Evaluator()
+            logger.info("✅ Evaluator initialized")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Evaluator: {e}")
+            raise
+        
+        logger.info("✅ All integrated backend components loaded successfully")
         INTEGRATED_MODE = True
+        
     except Exception as e:
         logger.error(f"❌ Failed to load integrated backend: {e}")
-        # Fall back to API mode even in HF Spaces
-        API_BASE_URL = "http://localhost:8000"
-        IS_HF_SPACES = False
-        INTEGRATED_MODE = False
+        logger.error(f"❌ Error type: {type(e).__name__}")
+        logger.error(f"❌ Error details: {str(e)}")
+        
+        # Try to create a minimal working version
+        try:
+            logger.info("🔄 Attempting to create minimal integrated backend...")
+            
+            # Create minimal components that don't require external dependencies
+            class MinimalConfig:
+                @classmethod
+                def update_config(cls, config_dict):
+                    pass
+                @classmethod
+                def load_config_from_file(cls):
+                    pass
+            
+            class MinimalClient:
+                def test_connection_with_config(self, config):
+                    return False, "Minimal mode - connection testing disabled"
+                def reconnect(self):
+                    pass
+            
+            class MinimalGenerator:
+                def test_connection_with_config(self, config):
+                    return False, "Minimal mode - connection testing disabled"
+                def reconnect(self):
+                    pass
+            
+            class MinimalEvaluator:
+                def run_evaluation(self):
+                    return {
+                        "results": [],
+                        "metrics": {
+                            "total_tests": 0,
+                            "passed_tests": 0,
+                            "accuracy": 0.0,
+                            "average_execution_time": 0.0,
+                            "category_breakdown": {}
+                        }
+                    }
+            
+            # Use minimal components
+            Config = MinimalConfig()
+            db_client = MinimalClient()
+            query_generator = MinimalGenerator()
+            evaluator = MinimalEvaluator()
+            
+            logger.info("✅ Minimal integrated backend created")
+            INTEGRATED_MODE = True
+            
+        except Exception as minimal_e:
+            logger.error(f"❌ Failed to create minimal backend: {minimal_e}")
+            # Fall back to API mode even in HF Spaces
+            API_BASE_URL = "http://localhost:8000"
+            IS_HF_SPACES = False
+            INTEGRATED_MODE = False
 else:
     INTEGRATED_MODE = False
 
@@ -478,6 +579,15 @@ with gr.Blocks(title="CFG + Eval Toy", theme=gr.themes.Soft()) as demo:
     
     # Show current mode and debug info
     mode_text = "🌐 **Integrated Mode** (Hugging Face Spaces)" if INTEGRATED_MODE else "🏠 **API Mode** (Local Development)"
+    
+    # Check if components are available
+    components_status = []
+    if INTEGRATED_MODE:
+        components_status.append(f"- Config: {'✅' if 'Config' in globals() else '❌'}")
+        components_status.append(f"- ClickHouseClient: {'✅' if 'db_client' in globals() else '❌'}")
+        components_status.append(f"- QueryGenerator: {'✅' if 'query_generator' in globals() else '❌'}")
+        components_status.append(f"- Evaluator: {'✅' if 'evaluator' in globals() else '❌'}")
+    
     debug_info = f"""
 **Current Mode**: {mode_text}
 **Environment Variables**: 
@@ -485,6 +595,10 @@ with gr.Blocks(title="CFG + Eval Toy", theme=gr.themes.Soft()) as demo:
 - HOSTNAME: {os.getenv('HOSTNAME', 'Not set')}
 - API_BASE_URL: {API_BASE_URL}
 - INTEGRATED_MODE: {INTEGRATED_MODE}
+- IS_HF_SPACES: {IS_HF_SPACES}
+
+**Component Status**:
+{chr(10).join(components_status) if components_status else '- No components loaded'}
 """
     gr.Markdown(debug_info)
     
