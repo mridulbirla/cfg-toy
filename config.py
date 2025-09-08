@@ -1,7 +1,10 @@
 import os
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
+
+CONFIG_FILE = "app_config.json"
 
 class Config:
     # OpenAI Configuration
@@ -57,3 +60,48 @@ class Config:
             "debug": cls.DEBUG,
             "port": cls.PORT
         }
+    
+    @classmethod
+    def load_config_from_file(cls):
+        """Load configuration from file if it exists"""
+        try:
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, 'r') as f:
+                    config_data = json.load(f)
+                    cls.update_config(config_data)
+        except Exception as e:
+            print(f"Warning: Could not load config file: {e}")
+    
+    @classmethod
+    def save_config_to_file(cls, config_dict):
+        """Save configuration to file"""
+        try:
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(config_dict, f, indent=2)
+        except Exception as e:
+            print(f"Warning: Could not save config file: {e}")
+    
+    @classmethod
+    def update_config(cls, config_dict):
+        """Update configuration dynamically"""
+        if "openai" in config_dict:
+            openai_config = config_dict["openai"]
+            if "api_key" in openai_config:
+                cls.OPENAI_API_KEY = openai_config["api_key"]
+        
+        if "clickhouse" in config_dict:
+            clickhouse_config = config_dict["clickhouse"]
+            if "host" in clickhouse_config:
+                host = clickhouse_config["host"]
+                cls.CLICKHOUSE_HOST = host if host and host.lower() not in ['none', 'null', ''] else "localhost"
+            if "port" in clickhouse_config:
+                cls.CLICKHOUSE_PORT = int(clickhouse_config["port"])
+            if "username" in clickhouse_config:
+                cls.CLICKHOUSE_USERNAME = clickhouse_config["username"]
+            if "password" in clickhouse_config:
+                cls.CLICKHOUSE_PASSWORD = clickhouse_config["password"]
+            if "database" in clickhouse_config:
+                cls.CLICKHOUSE_DATABASE = clickhouse_config["database"]
+        
+        # Save to file
+        cls.save_config_to_file(config_dict)
