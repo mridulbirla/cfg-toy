@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class Evaluator:
     def __init__(self):
         self.query_generator = QueryGenerator()
-        self.db_client = ClickHouseClient()
+        self.db_client = ClickHouseClient(auto_connect=False)
     
     def compare_queries(self, generated: str, expected: str) -> bool:
         """Compare generated query with expected query"""

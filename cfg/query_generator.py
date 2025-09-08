@@ -7,14 +7,23 @@ logger = logging.getLogger(__name__)
 
 class QueryGenerator:
     def __init__(self):
-        self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
+        self.client = None
+        if Config.OPENAI_API_KEY:
+            self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
+        else:
+            logger.warning("⚠️ OpenAI API key not configured - QueryGenerator will not be functional")
     
     def reconnect(self):
         """Reconnect with updated configuration"""
         try:
-            self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
-            logger.info("✅ Reconnected to OpenAI with new configuration")
-            return True
+            if Config.OPENAI_API_KEY:
+                self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
+                logger.info("✅ Reconnected to OpenAI with new configuration")
+                return True
+            else:
+                self.client = None
+                logger.warning("⚠️ OpenAI API key not configured - QueryGenerator will not be functional")
+                return False
         except Exception as e:
             logger.error(f"❌ Failed to reconnect to OpenAI: {e}")
             return False
@@ -22,7 +31,11 @@ class QueryGenerator:
     def test_connection_with_config(self, config_dict):
         """Test connection with specific configuration"""
         try:
-            test_client = openai.OpenAI(api_key=config_dict["openai"]["api_key"])
+            api_key = config_dict.get("openai", {}).get("api_key")
+            if not api_key:
+                return False, "OpenAI API key not provided in configuration"
+            
+            test_client = openai.OpenAI(api_key=api_key)
             # Test with a simple request
             response = test_client.responses.create(
                 model="gpt-5",
@@ -36,10 +49,23 @@ class QueryGenerator:
     
     def generate_query(self, natural_language_query: str):
         """Generate ClickHouse query from natural language using GPT-5 with CFG"""
+        if self.client is None:
+            return {
+                "query": None,
+                "clarification": "OpenAI API key not configured. Please configure your OpenAI API key in the Configuration tab.",
+                "status": "needs_clarification"
+            }
         return self.generate_query_with_clarification(natural_language_query)
     
     def generate_query_with_clarification(self, natural_language_query: str):
         """Generate ClickHouse query from natural language using GPT-5 with CFG, returning clarification if needed"""
+        if self.client is None:
+            return {
+                "query": None,
+                "clarification": "OpenAI API key not configured. Please configure your OpenAI API key in the Configuration tab.",
+                "status": "needs_clarification"
+            }
+        
         try:
             # Make the prompt more conversational
             enhanced_prompt = f"""
