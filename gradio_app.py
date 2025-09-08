@@ -10,16 +10,23 @@ import time
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Check if running in Hugging Face Spaces
-IS_HF_SPACES = os.getenv("SPACE_ID") is not None
+# Check if running in Hugging Face Spaces or other cloud environments
+IS_HF_SPACES = (
+    os.getenv("SPACE_ID") is not None or 
+    os.getenv("HUGGINGFACE_SPACE_ID") is not None or
+    os.getenv("GRADIO_SERVER_NAME") is not None or
+    "huggingface" in os.getenv("HOSTNAME", "").lower()
+)
 
 # API configuration
 if IS_HF_SPACES:
     # In Hugging Face Spaces, we'll use integrated backend
     API_BASE_URL = None
+    logger.info("🌐 Detected Hugging Face Spaces environment - using integrated backend")
 else:
     # Local development with separate API server
     API_BASE_URL = "http://localhost:8000"
+    logger.info("🏠 Detected local environment - using API server")
 
 # Global configuration storage
 app_config = {
@@ -66,11 +73,15 @@ if IS_HF_SPACES:
         evaluator = Evaluator()
         
         logger.info("✅ Integrated backend components loaded successfully")
+        INTEGRATED_MODE = True
     except Exception as e:
         logger.error(f"❌ Failed to load integrated backend: {e}")
         # Fall back to API mode even in HF Spaces
         API_BASE_URL = "http://localhost:8000"
         IS_HF_SPACES = False
+        INTEGRATED_MODE = False
+else:
+    INTEGRATED_MODE = False
 
 def generate_query_integrated(natural_language_query):
     """Generate ClickHouse query using integrated backend"""
@@ -144,7 +155,7 @@ def generate_query_api(natural_language_query):
 
 def generate_query(natural_language_query):
     """Generate ClickHouse query from natural language"""
-    if IS_HF_SPACES and API_BASE_URL is None:
+    if INTEGRATED_MODE:
         return generate_query_integrated(natural_language_query)
     else:
         return generate_query_api(natural_language_query)
@@ -228,7 +239,7 @@ def run_evaluation_api():
 
 def run_evaluation():
     """Run evaluation tests with progress tracking"""
-    if IS_HF_SPACES and API_BASE_URL is None:
+    if INTEGRATED_MODE:
         return run_evaluation_integrated()
     else:
         return run_evaluation_api()
@@ -273,7 +284,7 @@ def check_health_api():
 
 def check_health():
     """Check system health"""
-    if IS_HF_SPACES and API_BASE_URL is None:
+    if INTEGRATED_MODE:
         return check_health_integrated()
     else:
         return check_health_api()
@@ -341,7 +352,7 @@ def update_config_api(clickhouse_host, clickhouse_port, clickhouse_username, cli
 
 def update_config(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database, openai_api_key):
     """Update application configuration"""
-    if IS_HF_SPACES and API_BASE_URL is None:
+    if INTEGRATED_MODE:
         return update_config_integrated(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database, openai_api_key)
     else:
         return update_config_api(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database, openai_api_key)
@@ -349,6 +360,9 @@ def update_config(clickhouse_host, clickhouse_port, clickhouse_username, clickho
 def test_clickhouse_connection_integrated(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database):
     """Test ClickHouse connection using integrated backend"""
     try:
+        if not INTEGRATED_MODE or 'db_client' not in globals():
+            return "🔴 Integrated backend not available. Please check the logs."
+        
         test_config = {
             "clickhouse": {
                 "host": clickhouse_host,
@@ -399,7 +413,7 @@ def test_clickhouse_connection_api(clickhouse_host, clickhouse_port, clickhouse_
 
 def test_clickhouse_connection(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database):
     """Test ClickHouse connection"""
-    if IS_HF_SPACES and API_BASE_URL is None:
+    if INTEGRATED_MODE:
         return test_clickhouse_connection_integrated(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database)
     else:
         return test_clickhouse_connection_api(clickhouse_host, clickhouse_port, clickhouse_username, clickhouse_password, clickhouse_database)
@@ -407,6 +421,9 @@ def test_clickhouse_connection(clickhouse_host, clickhouse_port, clickhouse_user
 def test_openai_connection_integrated(openai_api_key):
     """Test OpenAI connection using integrated backend"""
     try:
+        if not INTEGRATED_MODE or 'query_generator' not in globals():
+            return "🔴 Integrated backend not available. Please check the logs."
+        
         test_config = {
             "openai": {
                 "api_key": openai_api_key
@@ -449,7 +466,7 @@ def test_openai_connection_api(openai_api_key):
 
 def test_openai_connection(openai_api_key):
     """Test OpenAI connection"""
-    if IS_HF_SPACES and API_BASE_URL is None:
+    if INTEGRATED_MODE:
         return test_openai_connection_integrated(openai_api_key)
     else:
         return test_openai_connection_api(openai_api_key)
@@ -458,6 +475,18 @@ def test_openai_connection(openai_api_key):
 with gr.Blocks(title="CFG + Eval Toy", theme=gr.themes.Soft()) as demo:
     gr.Markdown("# 🧠 CFG + Eval Toy")
     gr.Markdown("Generate ClickHouse queries from natural language using GPT-5's Context Free Grammar")
+    
+    # Show current mode and debug info
+    mode_text = "🌐 **Integrated Mode** (Hugging Face Spaces)" if INTEGRATED_MODE else "🏠 **API Mode** (Local Development)"
+    debug_info = f"""
+**Current Mode**: {mode_text}
+**Environment Variables**: 
+- SPACE_ID: {os.getenv('SPACE_ID', 'Not set')}
+- HOSTNAME: {os.getenv('HOSTNAME', 'Not set')}
+- API_BASE_URL: {API_BASE_URL}
+- INTEGRATED_MODE: {INTEGRATED_MODE}
+"""
+    gr.Markdown(debug_info)
     
     with gr.Tab("Query Interface"):
         with gr.Row():
@@ -508,7 +537,7 @@ with gr.Blocks(title="CFG + Eval Toy", theme=gr.themes.Soft()) as demo:
                 progress_text = "## Evaluation Progress\n\n🚀 Starting evaluation...\n\n"
                 yield progress_text, "🔄 Initializing..."
                 
-                if IS_HF_SPACES and API_BASE_URL is None:
+                if INTEGRATED_MODE:
                     # Use integrated backend
                     final_results = evaluator.run_evaluation()
                 else:
