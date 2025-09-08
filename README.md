@@ -44,8 +44,67 @@ A Python application that demonstrates GPT-5's new Context Free Grammar (CFG) ca
 git clone https://github.com/mridulbirla/cfg-toy
 cd cfg-eval-toy
 
-# Run setup script
-python setup.py
+# Install dependencies
+pip install -r requirements.txt
 
-# Configure environment variables
+# Configure environment variables (optional - can also use Gradio UI)
 # Edit .env file with your API keys and database credentials
+```
+
+### 3. Configuration
+
+You can configure the application in two ways:
+
+#### Option A: Using the Gradio UI (Recommended)
+1. Start the application: `python gradio_app.py`
+2. Navigate to the "Configuration" tab
+3. Enter your ClickHouse and OpenAI credentials
+4. Test connections using the "Test" buttons
+5. Click "Update Configuration" to save settings
+
+#### Option B: Using Environment Variables
+Create a `.env` file in the project root:
+
+```bash
+# OpenAI Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+
+# ClickHouse Configuration
+CLICKHOUSE_HOST=localhost
+CLICKHOUSE_PORT=8123
+CLICKHOUSE_USERNAME=default
+CLICKHOUSE_PASSWORD=your_password
+CLICKHOUSE_DATABASE=default
+
+# Application Configuration
+DEBUG=False
+PORT=8000
+```
+
+### 4. Running the Application
+
+```bash
+# Start the API server
+python main.py
+
+# In another terminal, start the Gradio interface
+python gradio_app.py
+```
+
+The application will be available at:
+- **Gradio UI**: http://localhost:7860
+- **API**: http://localhost:8000
+
+## Configuration Features
+
+### Dynamic Configuration
+- **No Restart Required**: Update credentials through the Gradio UI without restarting the application
+- **Persistent Storage**: Configuration is automatically saved to `app_config.json`
+- **Connection Testing**: Test ClickHouse and OpenAI connections before saving
+- **Fallback Support**: Falls back to environment variables if no UI configuration is set
+
+### Configuration Tab Features
+- **ClickHouse Settings**: Host, port, username, password, database
+- **OpenAI Settings**: API key configuration
+- **Test Connections**: Verify credentials before saving
+- **Real-time Updates**: Changes take effect immediately

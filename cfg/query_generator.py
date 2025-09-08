@@ -7,7 +7,32 @@ logger = logging.getLogger(__name__)
 
 class QueryGenerator:
     def __init__(self):
-        self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
+        self.client = openai.OpenAI(api_key=Config.get_openai_api_key())
+    
+    def reconnect(self):
+        """Reconnect with updated configuration"""
+        try:
+            self.client = openai.OpenAI(api_key=Config.get_openai_api_key())
+            logger.info("✅ Reconnected to OpenAI with new configuration")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to reconnect to OpenAI: {e}")
+            return False
+    
+    def test_connection_with_config(self, config_dict):
+        """Test connection with specific configuration"""
+        try:
+            test_client = openai.OpenAI(api_key=config_dict["openai"]["api_key"])
+            # Test with a simple request
+            response = test_client.responses.create(
+                model="gpt-5",
+                input="Hello, this is a test.",
+                text={"format": {"type": "text"}}
+            )
+            return True, None
+        except Exception as e:
+            logger.error(f"OpenAI connection test failed: {e}")
+            return False, str(e)
     
     def generate_query(self, natural_language_query: str):
         """Generate ClickHouse query from natural language using GPT-5 with CFG"""

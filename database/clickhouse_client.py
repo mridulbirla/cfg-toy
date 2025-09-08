@@ -14,16 +14,49 @@ class ClickHouseClient:
         """Establish connection to ClickHouse"""
         try:
             self.client = clickhouse_connect.get_client(
-                host=Config.CLICKHOUSE_HOST,
-                port=Config.CLICKHOUSE_PORT,
-                username=Config.CLICKHOUSE_USERNAME,
-                password=Config.CLICKHOUSE_PASSWORD,
-                database=Config.CLICKHOUSE_DATABASE
+                host=Config.get_clickhouse_host(),
+                port=Config.get_clickhouse_port(),
+                username=Config.get_clickhouse_username(),
+                password=Config.get_clickhouse_password(),
+                database=Config.get_clickhouse_database()
             )
             logger.info("✅ Connected to ClickHouse")
         except Exception as e:
             logger.error(f"❌ Failed to connect to ClickHouse: {e}")
             raise
+    
+    def reconnect(self):
+        """Reconnect with updated configuration"""
+        try:
+            self.client = clickhouse_connect.get_client(
+                host=Config.get_clickhouse_host(),
+                port=Config.get_clickhouse_port(),
+                username=Config.get_clickhouse_username(),
+                password=Config.get_clickhouse_password(),
+                database=Config.get_clickhouse_database()
+            )
+            logger.info("✅ Reconnected to ClickHouse with new configuration")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to reconnect to ClickHouse: {e}")
+            return False
+    
+    def test_connection_with_config(self, config_dict):
+        """Test connection with specific configuration"""
+        try:
+            test_client = clickhouse_connect.get_client(
+                host=config_dict["clickhouse"]["host"],
+                port=int(config_dict["clickhouse"]["port"]),
+                username=config_dict["clickhouse"]["username"],
+                password=config_dict["clickhouse"]["password"],
+                database=config_dict["clickhouse"]["database"]
+            )
+            result = test_client.query("SELECT 1 as test")
+            test_client.close()
+            return True, None
+        except Exception as e:
+            logger.error(f"Connection test failed: {e}")
+            return False, str(e)
     
     def execute_query(self, query: str):
         """Execute a ClickHouse query and return results"""

@@ -1,9 +1,12 @@
 import logging
 import time
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import uvicorn
+import json
+import asyncio
 
 from config import Config
 from database.clickhouse_client import ClickHouseClient
@@ -15,6 +18,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="CFG + Eval Toy API", version="1.0.0")
+
+# Load configuration from file if it exists
+Config.load_config_from_file()
 
 # Initialize components
 db_client = ClickHouseClient()
@@ -31,6 +37,14 @@ class QueryResponse(BaseModel):
     status: str
     results: Optional[Dict[str, Any]] = None
     execution_time: Optional[float] = None
+
+class ConfigRequest(BaseModel):
+    clickhouse: Optional[Dict[str, Any]] = None
+    openai: Optional[Dict[str, Any]] = None
+
+class TestResponse(BaseModel):
+    connected: bool
+    error: Optional[str] = None
 
 @app.get("/health")
 async def health_check():
@@ -95,6 +109,88 @@ async def run_evaluation():
     except Exception as e:
         logger.error(f"Evaluation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/evaluate-stream")
+async def run_evaluation_stream():
+    """Run evaluation tests with streaming progress updates"""
+    async def generate_progress():
+        try:
+            # Send initial progress
+            yield f"data: {json.dumps({'type': 'start', 'message': 'Starting evaluation...'})}\n\n"
+            
+            # Store progress updates
+            progress_updates = []
+            
+            def progress_callback(current, total, description, status, result):
+                progress_data = {
+                    'type': 'progress',
+                    'current': current,
+                    'total': total,
+                    'description': description,
+                    'status': status,
+                    'progress_percent': (current / total) * 100
+                }
+                progress_updates.append(progress_data)
+            
+            # Run evaluation with progress callback
+            evaluation_results = evaluator.run_evaluation(progress_callback)
+            
+            # Send all progress updates
+            for update in progress_updates:
+                yield f"data: {json.dumps(update)}\n\n"
+            
+            # Send final results
+            yield f"data: {json.dumps({'type': 'complete', 'results': evaluation_results})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Streaming evaluation failed: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+    
+    return StreamingResponse(
+        generate_progress(),
+        media_type="text/plain",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+    )
+
+@app.post("/config")
+async def update_configuration(request: ConfigRequest):
+    """Update application configuration"""
+    try:
+        config_dict = request.dict()
+        Config.update_config(config_dict)
+        
+        # Reconnect clients with new configuration
+        if "clickhouse" in config_dict:
+            db_client.reconnect()
+        if "openai" in config_dict:
+            query_generator.reconnect()
+        
+        return {"status": "success", "message": "Configuration updated successfully"}
+    except Exception as e:
+        logger.error(f"Configuration update failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/test-clickhouse", response_model=TestResponse)
+async def test_clickhouse_connection(request: ConfigRequest):
+    """Test ClickHouse connection with provided configuration"""
+    try:
+        config_dict = request.dict()
+        connected, error = db_client.test_connection_with_config(config_dict)
+        return TestResponse(connected=connected, error=error)
+    except Exception as e:
+        logger.error(f"ClickHouse test failed: {e}")
+        return TestResponse(connected=False, error=str(e))
+
+@app.post("/test-openai", response_model=TestResponse)
+async def test_openai_connection(request: ConfigRequest):
+    """Test OpenAI connection with provided configuration"""
+    try:
+        config_dict = request.dict()
+        connected, error = query_generator.test_connection_with_config(config_dict)
+        return TestResponse(connected=connected, error=error)
+    except Exception as e:
+        logger.error(f"OpenAI test failed: {e}")
+        return TestResponse(connected=False, error=str(e))
 
 if __name__ == "__main__":
     uvicorn.run(

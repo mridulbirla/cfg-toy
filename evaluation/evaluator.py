@@ -35,14 +35,15 @@ class Evaluator:
         similarity = len(intersection) / len(union) if union else 0
         return similarity > 0.8  # 80% similarity threshold
     
-    def run_evaluation(self) -> Dict[str, Any]:
+    def run_evaluation(self, progress_callback=None) -> Dict[str, Any]:
         """Run all test cases and return evaluation results"""
         results = []
         total_execution_time = 0
+        total_tests = len(TEST_CASES)
         
-        logger.info(f"🧪 Starting evaluation with {len(TEST_CASES)} test cases...")
+        logger.info(f"🧪 Starting evaluation with {total_tests} test cases...")
         
-        for test_case in TEST_CASES:
+        for i, test_case in enumerate(TEST_CASES):
             try:
                 logger.info(f"Testing: {test_case['description']}")
                 
@@ -73,9 +74,13 @@ class Evaluator:
                 status = "✅ PASS" if is_correct else "❌ FAIL"
                 logger.info(f"{status} - {test_case['description']}")
                 
+                # Call progress callback if provided
+                if progress_callback:
+                    progress_callback(i + 1, total_tests, test_case['description'], status, result)
+                
             except Exception as e:
                 logger.error(f"❌ Test failed: {test_case['description']} - {e}")
-                results.append({
+                error_result = {
                     "id": test_case['id'],
                     "test_case": test_case,
                     "generated_query": "",
@@ -84,7 +89,12 @@ class Evaluator:
                     "execution_time": 0,
                     "timestamp": time.time(),
                     "error": str(e)
-                })
+                }
+                results.append(error_result)
+                
+                # Call progress callback for error case
+                if progress_callback:
+                    progress_callback(i + 1, total_tests, test_case['description'], "❌ ERROR", error_result)
         
         # Calculate metrics
         metrics = self.calculate_metrics(results, total_execution_time)
