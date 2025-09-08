@@ -121,66 +121,32 @@ if IS_HF_SPACES:
             raise
         
         logger.info("✅ All integrated backend components loaded successfully")
-        INTEGRATED_MODE = True
+        
+        # Test if components are actually working
+        try:
+            # Test ClickHouse client
+            test_result = db_client.test_connection_with_config({"clickhouse": {"host": "test"}})
+            logger.info(f"✅ ClickHouse client test: {test_result}")
+            
+            # Test QueryGenerator
+            test_result = query_generator.test_connection_with_config({"openai": {"api_key": "test"}})
+            logger.info(f"✅ QueryGenerator test: {test_result}")
+            
+            INTEGRATED_MODE = True
+            logger.info("✅ All components tested and working")
+            
+        except Exception as test_e:
+            logger.error(f"❌ Component test failed: {test_e}")
+            raise test_e
         
     except Exception as e:
         logger.error(f"❌ Failed to load integrated backend: {e}")
         logger.error(f"❌ Error type: {type(e).__name__}")
         logger.error(f"❌ Error details: {str(e)}")
         
-        # Try to create a minimal working version
-        try:
-            logger.info("🔄 Attempting to create minimal integrated backend...")
-            
-            # Create minimal components that don't require external dependencies
-            class MinimalConfig:
-                @classmethod
-                def update_config(cls, config_dict):
-                    pass
-                @classmethod
-                def load_config_from_file(cls):
-                    pass
-            
-            class MinimalClient:
-                def test_connection_with_config(self, config):
-                    return False, "Minimal mode - connection testing disabled. Full backend failed to load."
-                def reconnect(self):
-                    pass
-            
-            class MinimalGenerator:
-                def test_connection_with_config(self, config):
-                    return False, "Minimal mode - connection testing disabled. Full backend failed to load."
-                def reconnect(self):
-                    pass
-            
-            class MinimalEvaluator:
-                def run_evaluation(self):
-                    return {
-                        "results": [],
-                        "metrics": {
-                            "total_tests": 0,
-                            "passed_tests": 0,
-                            "accuracy": 0.0,
-                            "average_execution_time": 0.0,
-                            "category_breakdown": {}
-                        }
-                    }
-            
-            # Use minimal components
-            Config = MinimalConfig()
-            db_client = MinimalClient()
-            query_generator = MinimalGenerator()
-            evaluator = MinimalEvaluator()
-            
-            logger.info("✅ Minimal integrated backend created")
-            INTEGRATED_MODE = True
-            
-        except Exception as minimal_e:
-            logger.error(f"❌ Failed to create minimal backend: {minimal_e}")
-            # Fall back to API mode even in HF Spaces
-            API_BASE_URL = "http://localhost:8000"
-            IS_HF_SPACES = False
-            INTEGRATED_MODE = False
+        # Don't create minimal components - let it fail completely
+        logger.error("❌ Integrated backend failed to load - no fallback")
+        INTEGRATED_MODE = False
 else:
     INTEGRATED_MODE = False
 
